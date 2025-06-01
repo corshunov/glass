@@ -1,0 +1,12 @@
+[Unit]
+Description=Glass
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c "cd /home/tami/glass; . .venv/bin/activate; exec python src/main.py"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
