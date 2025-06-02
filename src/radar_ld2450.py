@@ -40,7 +40,9 @@ class LD2450():
     
     @staticmethod
     def angle(t):
-        return math.atan(t[0]/t[1])
+        rad = math.atan(t[0]/t[1])
+        deg = int(rad * 180 / math.pi)
+        return deg
 
     def __init__(self, uartdev, verbose=False):
         self.uartdev = uartdev

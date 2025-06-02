@@ -1,3 +1,2 @@
 pyserial
-rpi_hardware_pwm
 RPi.GPIO

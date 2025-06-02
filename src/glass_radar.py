@@ -4,16 +4,16 @@ from radar_ld2450 import LD2450
 import utils
 
 
-class GlassRadar():
+class GlassRadar(LD2450):
     def __init__(self, cfg):
         self.UARTDEV = cfg['uartdev']
         self.MAX_FRAME_FAILURES = cfg['max_frame_failures']
-        self.DISTANCE_ACTION_DELTA = cfg['distance_action_delta']
-        self.DISTANCE_ACTION_MAX = cfg['distance_action_max']
-        self.DISTANCE_ACTION_THR = cfg['distance_action_thr']
-        self.ANGLE_ACTION_DELTA = cfg['angle_action_delta']
-        self.ANGLE_ACTION_ABS_MAX = cfg['angle_action_abs_max']
-        self.ANGLE_ACTION_ABS_THR = cfg['angle_action_abs_thr']
+        self.DISTANCE_DELTA = cfg['distance_delta']
+        self.DISTANCE_MAX = cfg['distance_max']
+        self.DISTANCE_THR = cfg['distance_thr']
+        self.ANGLE_DELTA = cfg['angle_delta']
+        self.ANGLE_ABS_MAX = cfg['angle_abs_max']
+        self.ANGLE_ABS_THR = cfg['angle_abs_thr']
 
         super().__init__(self.UARTDEV)
 
@@ -22,14 +22,12 @@ class GlassRadar():
         self.set_zone_filtering(mode=0)
 
         self.distance_raw = None
-        self.distance_action = None
-        self.angle_raw = None
-        self.angle_action = None
-        self.action = False
+        self.distance_reliable = self.DISTANCE_MAX
+        self.angle_abs_raw = None
+        self.angle_abs_reliable = self.ANGLE_ABS_MAX
+        self.human_present = False
 
-        self.text = ""
-
-        print(f"Glass radar initialized ({uartdev})")
+        print(f"Glass radar initialized ({self.UARTDEV})")
 
     def process(self):
         data = self.get_data()
@@ -40,58 +38,42 @@ class GlassRadar():
             map(lambda t: (self.distance(t), self.angle(t)), data))
 
         if distance_angle_raw_list:
-            self.distance_raw, self.angle_raw = \
+            self.distance_raw, angle_raw = \
                 min(distance_angle_raw_list, key=lambda t: t[0])
+
+            self.angle_abs_raw = math.fabs(angle_raw)
         else:
             self.distance_raw = None
-            self.angle_raw = None
+            self.angle_abs_raw = None
 
         if self.distance_raw:
-            distance_action_diff = utils.clamp(
-                self.distance_raw - self.distance_action,
-                -self.DISTANCE_ACTION_DELTA,
-                self.DISTANCE_ACTION_DELTA)
+            distance_diff = utils.clamp(
+                self.distance_raw - self.distance_reliable,
+                -self.DISTANCE_DELTA,
+                self.DISTANCE_DELTA)
 
-            angle_action_diff = utils.clamp(
-                self.angle_raw - self.angle_action,
-                -self.ANGLE_ACTION_DELTA,
-                self.ANGLE_ACTION_DELTA)
+            angle_diff = utils.clamp(
+                self.angle_abs_raw - self.angle_abs_reliable,
+                -self.ANGLE_DELTA,
+                self.ANGLE_DELTA)
         else:
-            distance_action_diff = self.DISTANCE_ACTION_DELTA
-            angle_action_diff = self.ANGLE_ACTION_DELTA
+            distance_diff = self.DISTANCE_DELTA
+            angle_diff = self.ANGLE_DELTA
 
-        self.distance_action = utils.clamp(
-            self.distance_action + distance_action_diff,
+        self.distance_reliable = utils.clamp(
+            self.distance_reliable + distance_diff,
             0,
-            self.DISTANCE_ACTION_MAX)
+            self.DISTANCE_MAX)
 
-        self.angle_action = utils.clamp(
-            self.angle_action + angle_action_diff,
-            -self.ANGLE_ACTION_ABS_MAX,
-            self.ANGLE_ACTION_ABS_MAX)
+        self.angle_abs_reliable = utils.clamp(
+            self.angle_abs_reliable + angle_diff,
+            0,
+            self.ANGLE_ABS_MAX)
 
-        if (self.distance_action < self.DISTANCE_ACTION_THR) and \
-           (math.fabs(self.angle_action) < self.ANGLE_ACTION_ABS_THR):
-            self.action = True
+        if (self.distance_reliable < self.DISTANCE_THR) and \
+           (self.angle_abs_reliable < self.ANGLE_ABS_THR):
+            self.human_present = True
         else:
-            self.action = False
-
-        self.text =  f"IN: {self.in_waiting:5}"
-        if self.distance_raw:
-            self.text += f" | Distance: "\
-                    f"{self.distance_raw:6.0f} / "\
-                    f"{self.distance_action:6.0f}"
-
-            self.text += f" | Angle: "\
-                    f"{self.angle_raw:7.2f} / "\
-                    f"{self.angle_action:7.2f}"
-        else:
-            self.text += f" | Distance: "\
-                    f"  --   / "\
-                    f"{self.distance_action:6.0f}"
-
-            self.text += f" | Angle: "\
-                    f"  --   / "\
-                    f"{self.angle_action:7.2f}"
+            self.human_preset = False
 
         return True
