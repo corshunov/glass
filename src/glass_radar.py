@@ -8,6 +8,8 @@ class GlassRadar(LD2450):
     def __init__(self, cfg):
         self.UARTDEV = cfg['uartdev']
         self.MAX_FRAME_FAILURES = cfg['max_frame_failures']
+        self.BLUETOOTH = cfg['bluetooth']
+        self.MULTI_TRACKING = cfg['multi_tracking']
         self.DISTANCE_DELTA = cfg['distance_delta']
         self.DISTANCE_MAX = cfg['distance_max']
         self.DISTANCE_THR = cfg['distance_thr']
@@ -17,10 +19,19 @@ class GlassRadar(LD2450):
 
         super().__init__(self.UARTDEV)
 
-        self.set_bluetooth_off(restart=True)
-        self.set_multi_tracking()
+        if self.BLUETOOTH:
+            self.set_bluetooth_on(restart=True)
+        else:
+            self.set_bluetooth_off(restart=True)
+
+        if self.MULTI_TRACKING:
+            self.set_multi_tracking()
+        else:
+            self.set_single_tracking()
+
         self.set_zone_filtering(mode=0)
 
+        self.t_raw = None
         self.distance_raw = None
         self.distance_reliable = self.DISTANCE_MAX
         self.angle_abs_raw = None
@@ -34,15 +45,16 @@ class GlassRadar(LD2450):
         if data is None:
             return False
 
-        distance_angle_raw_list = list(
-            map(lambda t: (self.distance(t), self.angle(t)), data))
+        if data:
+            data_extended = list(
+                map(lambda t: (t, self.distance(t), self.angle(t)), data))
 
-        if distance_angle_raw_list:
-            self.distance_raw, angle_raw = \
-                min(distance_angle_raw_list, key=lambda t: t[0])
+            self.t_raw, self.distance_raw, angle_raw = \
+                min(data_extended, key=lambda t: t[1])
 
             self.angle_abs_raw = math.fabs(angle_raw)
         else:
+            self.t_raw = None
             self.distance_raw = None
             self.angle_abs_raw = None
 

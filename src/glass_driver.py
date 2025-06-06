@@ -9,7 +9,7 @@ import RPi.GPIO as GPIO
 import utils
 
 
-class GlassController():
+class GlassDriver():
     STATE_OFF             = 0
     STATE_ON              = 1
     STATE_UNKNOWN         = 2

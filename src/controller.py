@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from glass_controller import GlassController
+from glass_driver import GlassDriver
 from glass_radar import GlassRadar
 import utils
 
@@ -42,6 +42,10 @@ class Glass():
             sys.exit(1)
 
     def process(self):
+        self.dt = datetime.now()
+
+        self.check_config()
+
         f1 = self.radar_1.process()
         if not f1:
             if self.radar_1.n_frame_failures >= self.RADAR_MAX_FRAME_FAILURES:
@@ -105,8 +109,6 @@ class Glass():
 
     def start(self):
         while True:
-            self.dt = datetime.now()
-            self.check_config()
             self.process()
 
 
