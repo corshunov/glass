@@ -4,7 +4,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=/bin/sh -c "cd /home/tami/glass; . .venv/bin/activate; exec python src/main.py"
+ExecStart=/bin/sh -c "cd /home/tami/glass; . .venv/bin/activate; exec python src/controller.py conf.cfg"
 Restart=always
 RestartSec=5
 

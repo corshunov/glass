@@ -21,6 +21,8 @@ class Glass():
         self.radar_1 = GlassRadar(self.cfg['radar_1'])
         self.radar_2 = GlassRadar(self.cfg['radar_2'])
 
+        self.DELAY_STATE = self.cfg['glass_driver']['delay_state']
+
         cmd = [
             "python",
             str(SCRIPT_DIR / "glass_controller.py"),
@@ -85,7 +87,7 @@ class Glass():
             elif cmd == GlassController.CMD_OFF:
                 self.state = GlassController.STATE_OFF
 
-            self.no_cmd_until_dt = self.dt + timedelta(seconds=3)
+            self.no_cmd_until_dt = self.dt + timedelta(seconds=self.DELAY_STATE)
 
         self.stats = [
             self.dt,

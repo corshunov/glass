@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 import sys
 import threading
@@ -25,7 +26,7 @@ class GlassDriver():
     A_PIN                 = 20
     B_PIN                 = 21
 
-    def __init__(self, cfg_path, debug=False):
+    def __init__(self, cfg_path):
         self._setup()
 
         self.cfg_path = Path(cfg_path)
@@ -33,12 +34,8 @@ class GlassDriver():
         self.cfg = None
         self.configure()
 
-        self._debug = debug
-        if self._debug:
-            print("Debug mode")
-
         self._dc_prev = None
-        self._dc = self.DC_OFF
+        self._dc = self.DC_OFF_L3
 
         self._state = self.STATE_OFF
 
@@ -63,37 +60,36 @@ class GlassDriver():
         self.cfg_mtime = self.cfg_path.stat().st_mtime
 
         cfg = utils.load_json(self.cfg_path)
-        self.cfg = cfg['controller']
+        self.cfg = cfg['glass_driver']
 
-        self.DC_OFF    = self.cfg['dc_off']
         self.DC_OFF_L1 = self.cfg['dc_off_l1']
         self.DC_OFF_L2 = self.cfg['dc_off_l2']
+        self.DC_OFF_L3 = self.cfg['dc_off_l3']
         self.DC_OFF_D1 = self.cfg['dc_off_d1']
         self.DC_OFF_D2 = self.cfg['dc_off_d2']
         self.DC_OFF_D3 = self.cfg['dc_off_d3']
 
-        self.DC_ON     = self.cfg['dc_on']
         self.DC_ON_L1  = self.cfg['dc_on_l1']
         self.DC_ON_L2  = self.cfg['dc_on_l2']
+        self.DC_ON_L3  = self.cfg['dc_on_l3']
         self.DC_ON_D1  = self.cfg['dc_on_d1']
         self.DC_ON_D2  = self.cfg['dc_on_d2']
         self.DC_ON_D3  = self.cfg['dc_on_d3']
 
         self.VERBOSE   = self.cfg['verbose']
 
+    def check_config(self):
+        cfg_mtime = self.cfg_path.stat().st_mtime
+        if cfg_mtime != self.cfg_mtime:
+            self.configure()
+            print("Config reloaded")
+
     def start(self):
         self._read_cmd_thread = threading.Thread(target=self._read_cmd, daemon=True)
         self._read_cmd_thread.start()
 
         while True:
-            if self._debug:
-                try:
-                    cfg_mtime = self.cfg_path.stat().st_mtime
-                    if cfg_mtime != self.cfg_mtime:
-                        self.configure()
-                        print("Config reloaded")
-                except:
-                    pass
+            self.check_config()
 
             if self._cmd == self.CMD_ON:
                 self._turn_on()
@@ -166,16 +162,18 @@ class GlassDriver():
             d = self.DC_ON_D3
 
         self._dc += d
-        if self._dc > self.DC_ON:
-            self._dc = self.DC_ON
+        if self._dc > self.DC_ON_L3:
+            self._dc = self.DC_ON_L3
 
     def _turn_on(self):
-        while (self._dc < self.DC_ON):
+        start_dt = datetime.now()
+        while (self._dc < self.DC_ON_L3):
             self._dc_up()
             self._cycle()
+        td = datetime.now() - start_dt
 
         self._state = self.STATE_ON
-        print("Glass if ON")
+        print(f"Glass if ON ({td})")
 
     def _dc_down(self):
         if self._dc > self.DC_OFF_L1:
@@ -186,16 +184,18 @@ class GlassDriver():
             d = self.DC_OFF_D3
 
         self._dc -= d
-        if self._dc < self.DC_OFF:
-            self._dc = self.DC_OFF
+        if self._dc < self.DC_OFF_L3:
+            self._dc = self.DC_OFF_L3
 
     def _turn_off(self):
-        while (self._dc > self.DC_OFF):
+        start_dt = datetime.now()
+        while (self._dc > self.DC_OFF_L3):
             self._dc_down()
             self._cycle()
+        td = datetime.now() - start_dt
 
         self._state = self.STATE_OFF
-        print("Glass if OFF")
+        print(f"Glass if OFF ({td})")
 
 
 if __name__ == "__main__":
@@ -205,25 +205,11 @@ if __name__ == "__main__":
         print("No path for configuration provided")
         sys.exit(1)
 
-    debug = "0"
-    try:
-        debug = sys.argv[2]
-    except:
-        pass
-
-    if debug == "0":
-        debug = False
-    elif debug == "1":
-        debug = True
-    else:
-        print("Invalid debug argument provided")
-        sys.exit(1)
-
-    glass_ctl = GlassController(cfg_path, debug)
+    glass_driver = GlassDriver(cfg_path)
 
     try:
-        glass_ctl.start()
+        glass_driver.start()
     except Exception as e:
         traceback.print_exc()
     finally:
-        glass_ctl.cleanup()
+        glass_driver.cleanup()
