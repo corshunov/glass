@@ -31,21 +31,36 @@ class GlassRadar(LD2450):
 
         self.set_zone_filtering(mode=0)
 
+        self.stuck = False
+        self.n_times_stuck = 0
+
+        self.t_raw_prev = None
         self.t_raw = None
+
         self.distance_raw = None
         self.distance_reliable = self.DISTANCE_MAX
+
         self.angle_abs_raw = None
         self.angle_abs_reliable = self.ANGLE_ABS_MAX
+
         self.human_present = False
 
         print(f"Glass radar initialized ({self.UARTDEV})")
 
     def process(self):
-        data = self.get_data()
-        if data is None:
-            return False
+        self.t_raw_prev = self.t_raw
 
-        if data:
+        data = self.get_data()
+
+        data_ok = True
+        if data is None:
+            data_ok = False
+
+        data_present = False
+        if data_ok and len(data) > 0:
+            data_present = True
+
+        if data_present:
             data_extended = list(
                 map(lambda t: (t, self.distance(t), self.angle(t)), data))
 
@@ -58,18 +73,20 @@ class GlassRadar(LD2450):
             self.distance_raw = None
             self.angle_abs_raw = None
 
-        if self.distance_raw:
+        if data_present:
             distance_diff = utils.clamp(
                 self.distance_raw - self.distance_reliable,
                 -self.DISTANCE_DELTA,
                 self.DISTANCE_DELTA)
+        else:
+            distance_diff = self.DISTANCE_DELTA
 
+        if data_present:
             angle_diff = utils.clamp(
                 self.angle_abs_raw - self.angle_abs_reliable,
                 -self.ANGLE_DELTA,
                 self.ANGLE_DELTA)
         else:
-            distance_diff = self.DISTANCE_DELTA
             angle_diff = self.ANGLE_DELTA
 
         self.distance_reliable = utils.clamp(
@@ -86,6 +103,57 @@ class GlassRadar(LD2450):
            (self.angle_abs_reliable < self.ANGLE_ABS_THR):
             self.human_present = True
         else:
-            self.human_preset = False
+            self.human_present = False
 
-        return True
+        if data_present and (self.t_raw == self.t_raw_prev):
+                self.n_times_stuck += 1
+        else:
+            self.n_times_stuck -= 1
+
+        if self.n_times_stuck > 5:
+            self.n_times_stuck = 5
+        elif self.n_times_stuck < 0:
+            self.n_times_stuck = 0
+
+        if self.n_times_stuck == 5:
+            self.stuck = True
+        elif self.n_times_stuck == 0:
+            self.stuck = False
+
+        return data_ok
+
+
+if __name__ == "__main__":
+    import sys
+
+    try:
+        cfg_path = sys.argv[1]
+    except:
+        print("No argument for UART device provided")
+        sys.exit(1)
+
+
+    cfg = utils.load_json(cfg_path)
+    r = GlassRadar(cfg['radar_2'])
+
+    try:
+        while True:
+            f = r.process()
+            if not f:
+                continue
+
+            if r.distance_raw:
+                sys.stdout.write(f"{r.in_waiting:4} | "\
+                                 f"{'stuck' if r.stuck else ' --- '} | "\
+                                 f"{r.distance_raw:5.0f} / {r.distance_reliable:5.0f} | "\
+                                 f"{r.angle_abs_raw:4.0f} / {r.angle_abs_reliable:4.0f}\n")
+            else:
+                sys.stdout.write(f"   - | "\
+                                 f"    - | "\
+                                 f"    - /     - | "\
+                                 f"   - /    -\n")
+
+            sys.stdout.flush()
+
+    except KeyboardInterrupt:
+        print("\nExiting...\n")

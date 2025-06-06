@@ -1,4 +1,5 @@
 from datetime import datetime
+import math
 from pathlib import Path
 import sys
 import threading
@@ -6,15 +7,12 @@ import time
 import traceback
 
 import RPi.GPIO as GPIO
+GPIO.setmode(GPIO.BCM)
 
 import utils
 
 
 class GlassDriver():
-    STATE_OFF             = 0
-    STATE_ON              = 1
-    STATE_UNKNOWN         = 2
-
     CMD_OFF               = "off"
     CMD_ON                = "on"
 
@@ -23,27 +21,26 @@ class GlassDriver():
     HALF_PERIOD           = PERIOD / 2
 
     ENABLE_PIN            = 16
-    A_PIN                 = 20
-    B_PIN                 = 21
+    A_PIN                 = 5
+    B_PIN                 = 6
 
     def __init__(self, cfg_path):
         self._setup()
 
         self.cfg_path = Path(cfg_path)
-        self.cfg_mtime = None
+        self.cfg_mtime = self.cfg_path.stat().st_mtime
+
         self.cfg = None
         self.configure()
 
         self._dc_prev = None
         self._dc = self.DC_OFF_L3
 
-        self._state = self.STATE_OFF
-
         self._cmd = None
 
-    def _setup(self):
-        GPIO.setmode(GPIO.BCM)
+        self.on = False
 
+    def _setup(self):
         GPIO.setup(self.ENABLE_PIN, GPIO.OUT)
         GPIO.output(self.ENABLE_PIN, GPIO.HIGH)
 
@@ -57,8 +54,6 @@ class GlassDriver():
         GPIO.cleanup()
 
     def configure(self):
-        self.cfg_mtime = self.cfg_path.stat().st_mtime
-
         cfg = utils.load_json(self.cfg_path)
         self.cfg = cfg['glass_driver']
 
@@ -79,9 +74,14 @@ class GlassDriver():
         self.VERBOSE   = self.cfg['verbose']
 
     def check_config(self):
-        cfg_mtime = self.cfg_path.stat().st_mtime
+        try:
+            cfg_mtime = self.cfg_path.stat().st_mtime
+        except:
+            return
+
         if cfg_mtime != self.cfg_mtime:
             self.configure()
+            self.cfg_mtime = cfg_mtime
             print("Config reloaded")
 
     def start(self):
@@ -119,6 +119,8 @@ class GlassDriver():
         if pulse < 0:
             pulse = 0.
 
+        f = pulse > 0
+
         pause = self.HALF_PERIOD  - pulse
         if pause < 0:
             pause = 0.
@@ -130,25 +132,28 @@ class GlassDriver():
             case 2:
                 print(f"{self._dc:6.2f}")
 
-        GPIO.output(self.A_PIN, GPIO.LOW)
-        GPIO.output(self.B_PIN, GPIO.LOW)
+        #####
 
         # 1st half
-        if pulse > 0:
+        if f:
             GPIO.output(self.A_PIN, GPIO.HIGH)
         time.sleep(pulse)
 
-        GPIO.output(self.A_PIN, GPIO.LOW)
+        if f:
+            GPIO.output(self.A_PIN, GPIO.LOW)
         time.sleep(pause)
+
         #####
 
         # 2nd half
-        if pulse > 0:
+        if f:
             GPIO.output(self.B_PIN, GPIO.HIGH)
         time.sleep(pulse)
 
-        GPIO.output(self.B_PIN, GPIO.LOW)
+        if f:
+            GPIO.output(self.B_PIN, GPIO.LOW)
         time.sleep(pause)
+
         #####
 
         self._dc_prev = self._dc
@@ -172,7 +177,7 @@ class GlassDriver():
             self._cycle()
         td = datetime.now() - start_dt
 
-        self._state = self.STATE_ON
+        self.on = True
         print(f"Glass if ON ({td})")
 
     def _dc_down(self):
@@ -194,7 +199,7 @@ class GlassDriver():
             self._cycle()
         td = datetime.now() - start_dt
 
-        self._state = self.STATE_OFF
+        self.on = False
         print(f"Glass if OFF ({td})")
 
 
