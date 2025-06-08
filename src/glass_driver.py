@@ -214,7 +214,7 @@ if __name__ == "__main__":
 
     try:
         glass_driver.start()
-    except Exception as e:
+    except:
         traceback.print_exc()
     finally:
         glass_driver.cleanup()

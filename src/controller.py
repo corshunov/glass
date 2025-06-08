@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 
 from glass_driver import GlassDriver
 from glass_radar import GlassRadar
@@ -11,6 +12,32 @@ SCRIPT_DIR = Path(__file__).parent
 
 
 class Glass():
+    STAT_COLS = [
+        "timestamp",
+
+        "glass_on",
+
+        "radar_1_in_waiting",
+        "radar_1_stuck",
+        "radar_1_distance_raw",
+        "radar_1_distance_reliable",
+        "radar_1_angle_abs_raw",
+        "radar_1_angle_abs_reliable",
+        "radar_1_human_present",
+
+        "radar_2_in_waiting",
+        "radar_2_stuck",
+        "radar_2_distance_raw",
+        "radar_2_distance_reliable",
+        "radar_2_angle_abs_raw",
+        "radar_2_angle_abs_reliable",
+        "radar_2_human_present",
+
+        "cmd_allowed",
+        "both_present",
+        "stuck",
+    ]
+
     def __init__(self, cfg_path):
         self.dt = None
 
@@ -24,6 +51,11 @@ class Glass():
 
         self.DELAY_STATE = self.cfg['glass_driver']['delay_state']
 
+        self.stat_dir = Path.cwd() / "stats"
+        self.stat_dir.mkdir(exist_ok=True)
+
+        self.stat_f = None
+
         cmd = [
             "python",
             str(SCRIPT_DIR / "glass_driver.py"),
@@ -36,6 +68,12 @@ class Glass():
 
         self.glass_on = False
         self.no_cmd_until_dt = datetime.now()
+
+    def cleanup(self):
+        try:
+            self.stat_f.close()
+        except:
+            pass
 
     def check_config(self):
         try:
@@ -106,9 +144,9 @@ class Glass():
             d1_raw_text = f"{self.radar_1.distance_raw:5.0f}"
 
         if self.radar_1.angle_abs_raw is None:
-            a1_raw_text = "----"
+            a1_raw_text = "-----"
         else:
-            a1_raw_text = f"{self.radar_1.angle_abs_raw:4.0f}"
+            a1_raw_text = f"{self.radar_1.angle_abs_raw:5.0f}"
 
         if self.radar_2.distance_raw is None:
             d2_raw_text = "-----"
@@ -116,42 +154,73 @@ class Glass():
             d2_raw_text = f"{self.radar_2.distance_raw:5.0f}"
 
         if self.radar_2.angle_abs_raw is None:
-            a2_raw_text = "----"
+            a2_raw_text = "-----"
         else:
-            a2_raw_text = f"{self.radar_2.angle_abs_raw:4.0f}"
+            a2_raw_text = f"{self.radar_2.angle_abs_raw:5.0f}"
 
-        r1_text = (f"[1] {self.radar_1.in_waiting:4} | "\
-                   f"{'stuck' if self.radar_1.stuck else '-----'} | "\
-                   f"{d1_raw_text} / {self.radar_1.distance_reliable:5.0f} | "\
-                   f"{a1_raw_text} / {self.radar_1.angle_abs_reliable:4.0f} | "\
-                   f"{'yes' if self.radar_1.human_present else ' no'}\n")
+        text = f"Glass: {' ON' if self.glass_on else 'OFF'}"
 
-        r2_text = (f"[2] {self.radar_2.in_waiting:4} | "\
-                   f"{'stuck' if self.radar_2.stuck else '-----'} | "\
-                   f"{d2_raw_text} / {self.radar_2.distance_reliable:5.0f} | "\
-                   f"{a2_raw_text} / {self.radar_2.angle_abs_reliable:4.0f} | "\
-                   f"{'yes' if self.radar_2.human_present else ' no'}\n")
+        text += (f"\n[1] {self.radar_1.in_waiting:4} | "
+                 f"{'stuck' if self.radar_1.stuck else '-----'} | "
+                 f"{d1_raw_text} / {self.radar_1.distance_reliable:5.0f} | "
+                 f"{a1_raw_text} / {self.radar_1.angle_abs_reliable:5.0f} | "
+                 f"{'yes' if self.radar_1.human_present else ' no'}")
 
-        sys.stdout.write(f"Glass: {' ON' if self.glass_on else 'OFF'}\n")
-        sys.stdout.write(r1_text)
-        sys.stdout.write(r2_text)
-        sys.stdout.write(f"cmd_allowed: {'yes' if cmd_allowed else ' no'} | both_present: {both_present} | stuck: {stuck}\n")
+        text += (f"\n[2] {self.radar_2.in_waiting:4} | "
+                 f"{'stuck' if self.radar_2.stuck else '-----'} | "
+                 f"{d2_raw_text} / {self.radar_2.distance_reliable:5.0f} | "
+                 f"{a2_raw_text} / {self.radar_2.angle_abs_reliable:5.0f} | "
+                 f"{'yes' if self.radar_2.human_present else ' no'}")
+
+        text += f"\ncmd_allowed: {'yes' if cmd_allowed else ' no'} | both_present: {both_present} | stuck: {stuck}"
 
         #if cmd == GlassDriver.CMD_ON:
-        #    sys.stdout.write("\n")
-        #    sys.stdout.write(f"=================================\n")
-        #    sys.stdout.write(f"=====           ON          =====\n")
-        #    sys.stdout.write(f"=================================\n")
+        #    text += (f"\n================================="
+        #             f"\n=====           ON          ====="
+        #             f"\n=================================")
         #elif cmd == GlassDriver.CMD_OFF:
-        #    sys.stdout.write("\n")
-        #    sys.stdout.write(f"=================================\n")
-        #    sys.stdout.write(f"=====          OFF          =====\n")
-        #    sys.stdout.write(f"=================================\n")
+        #    text += (f"\n================================="
+        #             f"\n=====          OFF          ====="
+        #             f"\n=================================")
 
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        text += "\n"
+        print(text, flush=True)
+
+
+        stat = (f"{self.dt},"
+
+                f"{self.glass_on},"
+
+                f"{self.radar_1.in_waiting},"
+                f"{self.radar_1.stuck},"
+                f"{self.radar_1.distance_raw},"
+                f"{self.radar_1.distance_reliable},"
+                f"{self.radar_1.angle_abs_raw},"
+                f"{self.radar_1.angle_abs_reliable},"
+                f"{self.radar_1.human_present},"
+
+                f"{self.radar_2.in_waiting},"
+                f"{self.radar_2.stuck},"
+                f"{self.radar_2.distance_raw},"
+                f"{self.radar_2.distance_reliable},"
+                f"{self.radar_2.angle_abs_raw},"
+                f"{self.radar_2.angle_abs_reliable},"
+                f"{self.radar_2.human_present},"
+
+                f"{cmd_allowed},"
+                f"{both_present},"
+                f"{stuck}")
+
+        self.stat_f.write(f"{stat}\n")
 
     def start(self):
+        stat_name = datetime.now().strftime("%Y%m%dT%H%M%S")
+        stat_path = self.stat_dir / f"{stat_name}.csv"
+        self.stat_f = stat_path.open("a")
+
+        cols = ",".join(self.STAT_COLS)
+        self.stat_f.write(f"{cols}\n")
+
         while True:
             self.process()
 
@@ -164,4 +233,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     glass = Glass(cfg_path)
-    glass.start()
+
+    try:
+        glass.start()
+    except:
+        traceback.print_exc()
+    finally:
+        glass.cleanup()
