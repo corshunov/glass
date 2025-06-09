@@ -1,3 +1,4 @@
+from datetime import datetime
 import math
 
 from radar_ld2450 import LD2450
@@ -16,6 +17,7 @@ class GlassRadar(LD2450):
         self.ANGLE_DELTA = cfg['angle_delta']
         self.ANGLE_ABS_MAX = cfg['angle_abs_max']
         self.ANGLE_ABS_THR = cfg['angle_abs_thr']
+        self.TOGGLE_DELAY = cfg['toggle_delay']
 
         super().__init__(self.UARTDEV)
 
@@ -31,8 +33,10 @@ class GlassRadar(LD2450):
 
         self.set_zone_filtering(mode=0)
 
+        self.dt = datetime.now()
+
         self.stuck = False
-        self.n_times_stuck = 0
+        self.stuck_count = 0
 
         self.t_raw_prev = None
         self.t_raw = None
@@ -43,12 +47,16 @@ class GlassRadar(LD2450):
         self.angle_abs_raw = None
         self.angle_abs_reliable = self.ANGLE_ABS_MAX
 
+        self.human_present_prev = False
         self.human_present = False
+        self.human_present_reliable = False
+
+        self.toggle_dt = self.dt
 
         print(f"Glass radar initialized ({self.UARTDEV})")
 
     def process(self):
-        self.t_raw_prev = self.t_raw
+        self.dt = datetime.now()
 
         data = self.get_data()
 
@@ -60,6 +68,8 @@ class GlassRadar(LD2450):
         if data_ok and len(data) > 0:
             data_present = True
 
+        # New data.
+        self.t_raw_prev = self.t_raw
         if data_present:
             data_extended = list(
                 map(lambda t: (t, self.distance(t), self.angle(t)), data))
@@ -73,7 +83,30 @@ class GlassRadar(LD2450):
             self.distance_raw = None
             self.angle_abs_raw = None
 
-        if data_present:
+        # Stuck or not.
+        if self.stuck:
+            if data_present:
+                if self.t_raw != self.t_raw_prev:
+                    self.stuck_count += 1
+                else:
+                    self.stuck_count = 0
+            else:
+                self.stuck_count += 1
+
+            if self.stuck_count > 3:
+                self.stuck = False
+                self.stuck_count = 0
+        else:
+            if data_present and (self.t_raw == self.t_raw_prev):
+                self.stuck_count += 1
+            else:
+                self.stuck_count = 0
+
+            if self.stuck_count > 20:
+                self.stuck = True
+                self.stuck_count = 0
+
+        if data_present and (not self.stuck):
             distance_diff = utils.clamp(
                 self.distance_raw - self.distance_reliable,
                 -self.DISTANCE_DELTA,
@@ -81,7 +114,7 @@ class GlassRadar(LD2450):
         else:
             distance_diff = self.DISTANCE_DELTA
 
-        if data_present:
+        if data_present and (not self.stuck):
             angle_diff = utils.clamp(
                 self.angle_abs_raw - self.angle_abs_reliable,
                 -self.ANGLE_DELTA,
@@ -99,26 +132,18 @@ class GlassRadar(LD2450):
             0,
             self.ANGLE_ABS_MAX)
 
+        self.human_present_prev = self.human_present
         if (self.distance_reliable < self.DISTANCE_THR) and \
            (self.angle_abs_reliable < self.ANGLE_ABS_THR):
             self.human_present = True
         else:
             self.human_present = False
 
-        if data_present and (self.t_raw == self.t_raw_prev):
-                self.n_times_stuck += 1
-        else:
-            self.n_times_stuck -= 1
+        if self.human_present != self.human_present_prev:
+            self.toggle_dt = self.dt
 
-        if self.n_times_stuck > 5:
-            self.n_times_stuck = 5
-        elif self.n_times_stuck < 0:
-            self.n_times_stuck = 0
-
-        if self.n_times_stuck == 5:
-            self.stuck = True
-        elif self.n_times_stuck == 0:
-            self.stuck = False
+        if (self.dt - self.toggle_dt).total_seconds() > self.TOGGLE_DELAY:
+            self.human_present_reliable = self.human_present
 
         return data_ok
 

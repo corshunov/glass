@@ -49,7 +49,20 @@ class LD2450():
         self.verbose = verbose
         self.n_frame_failures = 0
 
-        self._ser = self._get_serial()
+        if self.uartdev == "/dev/ttyUSBx":
+            dev_path = Path("/dev")
+            for p in dev_path.glob('ttyUSB*'):
+                self.uartdev = str(p)
+                print(f"Trying '{p}'...")
+                try:
+                    self._ser = self._get_serial()
+                    break
+                except:
+                    pass
+            else:
+                raise Exception("Failed to init radar.")
+        else:
+            self._ser = self._get_serial()
 
     def _get_serial(self):
         try:
