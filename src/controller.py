@@ -113,6 +113,10 @@ class Glass():
         if (not f1) or (not f2):
             return
 
+        # Uncomment to always enable according side(s).
+        #self.radar_1.human_present_reliable = True
+        #self.radar_2.human_present_reliable = True
+
         cmd_allowed = self.dt > self.no_cmd_until_dt
         both_present = self.radar_1.human_present_reliable and \
                        self.radar_2.human_present_reliable

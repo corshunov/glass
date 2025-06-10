@@ -1,5 +1,6 @@
 from datetime import datetime
 import math
+from pathlib import Path
 
 from radar_ld2450 import LD2450
 import utils
@@ -12,6 +13,7 @@ class GlassRadar(LD2450):
         self.BLUETOOTH = cfg['bluetooth']
         self.MULTI_TRACKING = cfg['multi_tracking']
         self.DISTANCE_DELTA = cfg['distance_delta']
+        self.DISTANCE_MIN = cfg['distance_min']
         self.DISTANCE_MAX = cfg['distance_max']
         self.DISTANCE_THR = cfg['distance_thr']
         self.ANGLE_DELTA = cfg['angle_delta']
@@ -19,19 +21,23 @@ class GlassRadar(LD2450):
         self.ANGLE_ABS_THR = cfg['angle_abs_thr']
         self.TOGGLE_DELAY = cfg['toggle_delay']
 
-        super().__init__(self.UARTDEV)
 
-        if self.BLUETOOTH:
-            self.set_bluetooth_on(restart=True)
+        if self.UARTDEV == "/dev/ttyUSBx":
+            dev_path = Path("/dev")
+            dev_list = sorted(list(dev_path.glob('ttyUSB*')))
+            for p in dev_list:
+                self.UARTDEV = str(p)
+                print(f"Trying '{p}'...")
+                try:
+                    super().__init__(self.UARTDEV)
+                    self.setup()
+                    break
+                except:
+                    pass
+            else:
+                raise Exception("Failed to init radar.")
         else:
-            self.set_bluetooth_off(restart=True)
-
-        if self.MULTI_TRACKING:
-            self.set_multi_tracking()
-        else:
-            self.set_single_tracking()
-
-        self.set_zone_filtering(mode=0)
+            super().__init__(self.UARTDEV)
 
         self.dt = datetime.now()
 
@@ -54,6 +60,19 @@ class GlassRadar(LD2450):
         self.toggle_dt = self.dt
 
         print(f"Glass radar initialized ({self.UARTDEV})")
+
+    def setup(self):
+        if self.BLUETOOTH:
+            self.set_bluetooth_on(restart=True)
+        else:
+            self.set_bluetooth_off(restart=True)
+
+        if self.MULTI_TRACKING:
+            self.set_multi_tracking()
+        else:
+            self.set_single_tracking()
+
+        self.set_zone_filtering(mode=0)
 
     def process(self):
         self.dt = datetime.now()
@@ -124,7 +143,7 @@ class GlassRadar(LD2450):
 
         self.distance_reliable = utils.clamp(
             self.distance_reliable + distance_diff,
-            0,
+            self.DISTANCE_MIN,
             self.DISTANCE_MAX)
 
         self.angle_abs_reliable = utils.clamp(
